@@ -306,3 +306,15 @@ redis给每个master都分配了插槽，如果当前访问的节点发现算出
 * 单线程不需要考虑上下文切换，而且不用考虑多线程安全问题
 * 使用I/O多路复用模型，非阻塞IO
 
+**IO多路复用技术**
+
+一般的IO是请求内核读写数据，然后阻塞自己，直至内核准备好数据。即使socket没有数据也要阻塞到有数据为止
+
+而IO多路复用则是在请求读写之前会先发一个监听请求，阻塞自己监听多个socke连接，一旦有socket（一个或多个）可读可写时，就会通知进程，这时候进程再次阻塞自己请求内核读写数据。
+
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231201113238880.png" alt="image-20231201113238880" style="zoom:33%;" />
+
+常见的监听请请求分两大类：
+
+* select、poll：只会通知进程存在socket已经就绪，但是不知道是哪个socket，需要进程逐个询问
+* epoll：会告知进程哪个socket就绪，而且还会把就绪的socket写入用户空间
