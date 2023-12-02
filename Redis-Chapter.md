@@ -10,19 +10,19 @@
 
 ```java
 public R cacheThroughNullSolution(Long id) {
-        String res = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
-        if(res!=null){
-            if(res.equals(RedisConstant.REDIS_NULL_VALUE)){
-                return R.ok("Select from redis: data is null");
-            }else{
-                return R.ok(JSONObject.parseObject(res));
-            }
+    String res = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+    if(res!=null){
+        if(res.equals(RedisConstant.REDIS_NULL_VALUE)){
+            return R.ok("Select from redis: data is null");
+        }else{
+            return R.ok(JSONObject.parseObject(res));
         }
-        log.info("Select item, id: [{}] from redis and database, result => not exist",id);
-        stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id,RedisConstant.REDIS_NULL_VALUE);
-
-        return R.ok("Select from mysql: data is null");
     }
+    log.info("Select item, id: [{}] from redis and database, result => not exist",id);
+    stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id,RedisConstant.REDIS_NULL_VALUE);
+
+    return R.ok("Select from mysql: data is null");
+}
 ```
 
 2. 布隆过滤器：在查询redis之前可以先去访问布隆过滤器，如果返回不存在则直接返回，如果返回存在则再执行后面的查询业务。
@@ -126,37 +126,37 @@ public class BloomFilter {
 
    ```java
    public R hitThroughMutexSolution(Long id) {
-           String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+       String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+       if(StrUtil.isNotBlank(json)){
+           return R.ok(JSONObject.parseObject(json),"Select from redis");
+       }
+   
+       RLock lock = redissonClient.getLock(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX + id);
+       try {
+           boolean res = lock.tryLock(10 , TimeUnit.SECONDS);
+           if(!res){
+               return R.ok(null,"Cannot get lock");
+           }
+           json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
            if(StrUtil.isNotBlank(json)){
                return R.ok(JSONObject.parseObject(json),"Select from redis");
            }
    
-           RLock lock = redissonClient.getLock(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX + id);
-           try {
-               boolean res = lock.tryLock(10 , TimeUnit.SECONDS);
-               if(!res){
-                   return R.ok(null,"Cannot get lock");
-               }
-               json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
-               if(StrUtil.isNotBlank(json)){
-                   return R.ok(JSONObject.parseObject(json),"Select from redis");
-               }
-   
-               Item item = itemMapper.selectById(id);
-               Thread.sleep(1000);
-               if(item==null){
-                   return R.ok(null,"Select from mysql: data is null");
-               }else{
-                   stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id, JSON.toJSONString(item),30, TimeUnit.SECONDS);
-                   return R.ok(item,"Select from mysql");
-               }
-           } catch (Exception e) {
-               e.printStackTrace();
-               return R.error();
-           }finally {
-               lock.unlock();
+           Item item = itemMapper.selectById(id);
+           Thread.sleep(1000);
+           if(item==null){
+               return R.ok(null,"Select from mysql: data is null");
+           }else{
+               stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id, JSON.toJSONString(item),30, TimeUnit.SECONDS);
+               return R.ok(item,"Select from mysql");
            }
+       } catch (Exception e) {
+           e.printStackTrace();
+           return R.error();
+       }finally {
+           lock.unlock();
        }
+   }
    ```
 
    
@@ -175,41 +175,41 @@ public class BloomFilter {
    
    ```java
    public R hitThroughMLogicalTtlSolution(Long id) {
-           String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
-           RedisData redisData = JSONUtil.toBean(json , RedisData.class);
-           if(redisData.getDdlTime()>=System.currentTimeMillis()){
-               return R.ok(redisData.getData(),"Select from redis: not expired");
-           }
-           RLock lock = redissonClient.getLock(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX + id);
-   
-           try{
-               boolean res = lock.tryLock();
-               if(!res){
-                   return R.ok(redisData.getData(),"Select from redis: already expired");
-               }
-               CACHE_REBUILD_THREAD.submit(()->{
-                   try{
-                       log.debug("Cache rebuild");
-                       Item item = itemMapper.selectById(id);
-                       Thread.sleep(1000);
-                       RedisData redisData1=new RedisData();
-                       redisData1.setData(item);
-                       redisData1.setDdlTime(System.currentTimeMillis()+ TimeUnit.SECONDS.toMillis(30));
-                       stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+item.getId(), JSON.toJSONString(redisData1));
-   
-                   }catch (Exception e){
-                       e.printStackTrace();
-                   }finally {
-                       log.debug("Cache rebuild complete");
-                       stringRedisTemplate.delete(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX+id);
-                   }
-               });
-               return R.ok(redisData.getData(),"Select from redis: already expired");
-           }catch (Exception e){
-               e.printStackTrace();
-               return R.error();
-           }
+       String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+       RedisData redisData = JSONUtil.toBean(json , RedisData.class);
+       if(redisData.getDdlTime()>=System.currentTimeMillis()){
+           return R.ok(redisData.getData(),"Select from redis: not expired");
        }
+       RLock lock = redissonClient.getLock(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX + id);
+   
+       try{
+           boolean res = lock.tryLock();
+           if(!res){
+               return R.ok(redisData.getData(),"Select from redis: already expired");
+           }
+           CACHE_REBUILD_THREAD.submit(()->{
+               try{
+                   log.debug("Cache rebuild");
+                   Item item = itemMapper.selectById(id);
+                   Thread.sleep(1000);
+                   RedisData redisData1=new RedisData();
+                   redisData1.setData(item);
+                   redisData1.setDdlTime(System.currentTimeMillis()+ TimeUnit.SECONDS.toMillis(30));
+                   stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+item.getId(), JSON.toJSONString(redisData1));
+   
+               }catch (Exception e){
+                   e.printStackTrace();
+               }finally {
+                   log.debug("Cache rebuild complete");
+                   stringRedisTemplate.delete(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX+id);
+               }
+           });
+           return R.ok(redisData.getData(),"Select from redis: already expired");
+       }catch (Exception e){
+           e.printStackTrace();
+           return R.error();
+       }
+   }
    ```
    
    
@@ -268,57 +268,57 @@ public class BloomFilter {
 ```java
 //读操作 
 public R doubleWriteLockRead(Long id) {
-        RReadWriteLock readWriteLock = redissonClient.getReadWriteLock(RedisConstant.DEFAULT_ITEM_WR_LOCK_PREFIX + id);
-        try {
-            boolean res = readWriteLock.readLock().tryLock(10 , TimeUnit.SECONDS);
-            Thread.sleep(3000);
-            if(!res){
-                return R.error("Get lock failed");
-            }
-            String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id);
-            if(StrUtil.isNotBlank(json)){
-                return R.ok(JSONObject.parseObject(json),"Select from redis");
-            }
-
-            Item item = itemMapper.selectById(id);
-            if(item==null){
-                return R.ok(null,"Select from mysql: data not exist");
-            }
-
-            stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id,JSON.toJSONString(item),30,TimeUnit.SECONDS);
-            return R.ok(item,"Select from mysql");
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return R.error();
-        }finally {
-            readWriteLock.readLock().unlock();
+    RReadWriteLock readWriteLock = redissonClient.getReadWriteLock(RedisConstant.DEFAULT_ITEM_WR_LOCK_PREFIX + id);
+    try {
+        boolean res = readWriteLock.readLock().tryLock(10 , TimeUnit.SECONDS);
+        Thread.sleep(3000);
+        if(!res){
+            return R.error("Get lock failed");
+        }
+        String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id);
+        if(StrUtil.isNotBlank(json)){
+            return R.ok(JSONObject.parseObject(json),"Select from redis");
         }
 
+        Item item = itemMapper.selectById(id);
+        if(item==null){
+            return R.ok(null,"Select from mysql: data not exist");
+        }
+
+        stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id,JSON.toJSONString(item),30,TimeUnit.SECONDS);
+        return R.ok(item,"Select from mysql");
+
+    } catch (Exception e) {
+        e.printStackTrace();
+        return R.error();
+    }finally {
+        readWriteLock.readLock().unlock();
     }
+
+}
 
 //写操作
 public R doubleWriteLockWrite(Long id) {
-        RReadWriteLock readWriteLock = redissonClient.getReadWriteLock(RedisConstant.DEFAULT_ITEM_WR_LOCK_PREFIX + id);
-        try {
-            boolean res = readWriteLock.writeLock().tryLock(10 , TimeUnit.SECONDS);
-            if(!res){
-                return R.error("Get lock fail");
-            }
-            Thread.sleep(3000);
-            itemMapper.update(null,new LambdaUpdateWrapper<Item>()
-                    .eq(Item::getId,id)
-                    .set(Item::getName, UUID.randomUUID().toString())
-            );
-            stringRedisTemplate.delete(RedisConstant.DEFAULT_ITEM_PREFIX+id);
-            return R.ok(itemMapper.selectById(id),"Update success");
-        } catch (Exception e) {
-            e.printStackTrace();
-            return R.error();
-        }finally {
-            readWriteLock.writeLock().unlock();
+    RReadWriteLock readWriteLock = redissonClient.getReadWriteLock(RedisConstant.DEFAULT_ITEM_WR_LOCK_PREFIX + id);
+    try {
+        boolean res = readWriteLock.writeLock().tryLock(10 , TimeUnit.SECONDS);
+        if(!res){
+            return R.error("Get lock fail");
         }
+        Thread.sleep(3000);
+        itemMapper.update(null,new LambdaUpdateWrapper<Item>()
+                          .eq(Item::getId,id)
+                          .set(Item::getName, UUID.randomUUID().toString())
+                         );
+        stringRedisTemplate.delete(RedisConstant.DEFAULT_ITEM_PREFIX+id);
+        return R.ok(itemMapper.selectById(id),"Update success");
+    } catch (Exception e) {
+        e.printStackTrace();
+        return R.error();
+    }finally {
+        readWriteLock.writeLock().unlock();
     }
+}
 ```
 
 
