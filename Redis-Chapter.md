@@ -7,9 +7,50 @@
 **解决方案**
 
 1. 缓存空数据：查询数据库的结果尽管为空，也可以向缓存中插入一条空数据，不过可以将空数据的ttl时间设置的短一点。
+
+```java
+public R cacheThroughNullSolution(Long id) {
+        String res = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+        if(res!=null){
+            if(res.equals(RedisConstant.REDIS_NULL_VALUE)){
+                return R.ok("Select from redis: data is null");
+            }else{
+                return R.ok(JSONObject.parseObject(res));
+            }
+        }
+        log.info("Select item, id: [{}] from redis and database, result => not exist",id);
+        stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id,RedisConstant.REDIS_NULL_VALUE);
+
+        return R.ok("Select from mysql: data is null");
+    }
+```
+
 2. 布隆过滤器：在查询redis之前可以先去访问布隆过滤器，如果返回不存在则直接返回，如果返回存在则再执行后面的查询业务。
 
 <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130140657932.png" alt="image-20231130140657932" style="zoom:33%;" />
+
+```java
+public R cacheThroughBloomSolution(Long id) {
+    //NOTE: Before use bloom filter, you must remember to init it with data in mysql
+    if(!bloomFilter.select(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString())){
+    	return R.ok(null,"Select from bloom filter: data is null");
+    }
+
+    String res = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+    if(res!=null){
+    	return R.ok(JSONObject.parseObject(res),"Select from redis");
+    }
+
+    Item item = itemMapper.selectById(id);
+    if(item==null){
+    	stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id,RedisConstant.REDIS_NULL_VALUE,30, TimeUnit.SECONDS);
+    	return R.ok(null,"Select from mysql: data is null, bloom filter failed");
+    }else{
+    stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id, JSON.toJSONString(item),30, TimeUnit.SECONDS);
+    	return R.ok(item,"Select from mysql");
+    }
+}
+```
 
 > 注：布隆过滤器返回不存在一定不存在，但是返回存在只是代表数据可能存在。
 
@@ -20,6 +61,50 @@
 当查询某个key的时候，同样会用这$N$个哈希函数计算哈希值，然后查看这个$N$个bit位，只要有一个不为1则返回false，否则返回true
 
 <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130140813783.png" alt="image-20231130140813783" style="zoom: 33%;" />
+
+```java
+public class BloomFilter {
+    private final int[] bitmap=new int[100000];
+
+    private int hash1(String key){
+        return Math.abs(key.hashCode()%20359);
+    }
+
+    private int hash2(String key){
+        return Math.abs(key.hashCode()%66463);
+    }
+
+    private int hash3(String key){
+        return Math.abs(key.hashCode()%94351);
+    }
+
+    public boolean select(String key) {
+        List<Integer> hashValue= getHashValue(key);
+        for(Integer value:hashValue){
+            if(bitmap[value]==0){
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public void insert(String key) {
+        List<Integer> hashValue = getHashValue(key);
+        for(Integer value:hashValue){
+            bitmap[value]=1;
+        }
+    }
+
+    private List<Integer> getHashValue(String key) {
+        List<Integer> hashRes=new ArrayList<>();
+        hashRes.add(hash1(key));
+        hashRes.add(hash2(key));
+        hashRes.add(hash3(key));
+
+        return hashRes;
+    }
+}
+```
 
 
 
@@ -39,6 +124,43 @@
 
    <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130141650119.png" alt="image-20231130141650119" style="zoom: 33%;" />
 
+   ```java
+   public R hitThroughMutexSolution(Long id) {
+           String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+           if(StrUtil.isNotBlank(json)){
+               return R.ok(JSONObject.parseObject(json),"Select from redis");
+           }
+   
+           RLock lock = redissonClient.getLock(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX + id);
+           try {
+               boolean res = lock.tryLock(10 , TimeUnit.SECONDS);
+               if(!res){
+                   return R.ok(null,"Cannot get lock");
+               }
+               json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+               if(StrUtil.isNotBlank(json)){
+                   return R.ok(JSONObject.parseObject(json),"Select from redis");
+               }
+   
+               Item item = itemMapper.selectById(id);
+               Thread.sleep(1000);
+               if(item==null){
+                   return R.ok(null,"Select from mysql: data is null");
+               }else{
+                   stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id, JSON.toJSONString(item),30, TimeUnit.SECONDS);
+                   return R.ok(item,"Select from mysql");
+               }
+           } catch (Exception e) {
+               e.printStackTrace();
+               return R.error();
+           }finally {
+               lock.unlock();
+           }
+       }
+   ```
+
+   
+
 2. 逻辑过期
 
    这里不在给数据设置ttl，而是在数据创建的时候直接放入缓存，但是会添加一个逻辑过期字段。
@@ -50,6 +172,47 @@
    获取锁失败则会直接返回旧数据，而不是阻塞循环等待。
 
    <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130142038996.png" alt="image-20231130142038996" style="zoom:33%;" />
+   
+   ```java
+   public R hitThroughMLogicalTtlSolution(Long id) {
+           String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id.toString());
+           RedisData redisData = JSONUtil.toBean(json , RedisData.class);
+           if(redisData.getDdlTime()>=System.currentTimeMillis()){
+               return R.ok(redisData.getData(),"Select from redis: not expired");
+           }
+           RLock lock = redissonClient.getLock(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX + id);
+   
+           try{
+               boolean res = lock.tryLock();
+               if(!res){
+                   return R.ok(redisData.getData(),"Select from redis: already expired");
+               }
+               CACHE_REBUILD_THREAD.submit(()->{
+                   try{
+                       log.debug("Cache rebuild");
+                       Item item = itemMapper.selectById(id);
+                       Thread.sleep(1000);
+                       RedisData redisData1=new RedisData();
+                       redisData1.setData(item);
+                       redisData1.setDdlTime(System.currentTimeMillis()+ TimeUnit.SECONDS.toMillis(30));
+                       stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+item.getId(), JSON.toJSONString(redisData1));
+   
+                   }catch (Exception e){
+                       e.printStackTrace();
+                   }finally {
+                       log.debug("Cache rebuild complete");
+                       stringRedisTemplate.delete(RedisConstant.DEFAULT_ITEM_LOCK_PREFIX+id);
+                   }
+               });
+               return R.ok(redisData.getData(),"Select from redis: already expired");
+           }catch (Exception e){
+               e.printStackTrace();
+               return R.error();
+           }
+       }
+   ```
+   
+   
 
 **二者的比较**
 
@@ -101,6 +264,65 @@
   
   > 读锁是一把共享锁，写锁是一把排他锁
   
+
+```java
+//读操作 
+public R doubleWriteLockRead(Long id) {
+        RReadWriteLock readWriteLock = redissonClient.getReadWriteLock(RedisConstant.DEFAULT_ITEM_WR_LOCK_PREFIX + id);
+        try {
+            boolean res = readWriteLock.readLock().tryLock(10 , TimeUnit.SECONDS);
+            Thread.sleep(3000);
+            if(!res){
+                return R.error("Get lock failed");
+            }
+            String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id);
+            if(StrUtil.isNotBlank(json)){
+                return R.ok(JSONObject.parseObject(json),"Select from redis");
+            }
+
+            Item item = itemMapper.selectById(id);
+            if(item==null){
+                return R.ok(null,"Select from mysql: data not exist");
+            }
+
+            stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+id,JSON.toJSONString(item),30,TimeUnit.SECONDS);
+            return R.ok(item,"Select from mysql");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return R.error();
+        }finally {
+            readWriteLock.readLock().unlock();
+        }
+
+    }
+
+//写操作
+public R doubleWriteLockWrite(Long id) {
+        RReadWriteLock readWriteLock = redissonClient.getReadWriteLock(RedisConstant.DEFAULT_ITEM_WR_LOCK_PREFIX + id);
+        try {
+            boolean res = readWriteLock.writeLock().tryLock(10 , TimeUnit.SECONDS);
+            if(!res){
+                return R.error("Get lock fail");
+            }
+            Thread.sleep(3000);
+            itemMapper.update(null,new LambdaUpdateWrapper<Item>()
+                    .eq(Item::getId,id)
+                    .set(Item::getName, UUID.randomUUID().toString())
+            );
+            stringRedisTemplate.delete(RedisConstant.DEFAULT_ITEM_PREFIX+id);
+            return R.ok(itemMapper.selectById(id),"Update success");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return R.error();
+        }finally {
+            readWriteLock.writeLock().unlock();
+        }
+    }
+```
+
+
+
 * **最终一致性**：使用异步通知实现
 
   修改数据的时候不直接同时操作缓存和数据库，而是操作完数据库后发布一条消息，缓存服务会持续监听该信道的消息，然后更新自己的缓存。
@@ -308,9 +530,9 @@ redis给每个master都分配了插槽，如果当前访问的节点发现算出
 
 **IO多路复用技术**
 
-一般的IO是请求内核读写数据，然后阻塞自己，直至内核准备好数据。即使socket没有数据也要阻塞到有数据为止
+一般的IO是请求内核读写一个socket的数据，然后阻塞自己，直至内核准备好数据。即使socket没有数据也要阻塞到有数据为止
 
-而IO多路复用则是在请求读写之前会先发一个监听请求，阻塞自己监听多个socke连接，一旦有socket（一个或多个）可读可写时，就会通知进程，这时候进程再次阻塞自己请求内核读写数据。
+而IO多路复用则是在请求读写之前会先发一个监听请求，阻塞自己监听**多个**socke连接，一旦有socket（一个或多个）可读可写时，就会通知进程，这时候进程再次阻塞自己请求内核读写数据。
 
 <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231201113238880.png" alt="image-20231201113238880" style="zoom:33%;" />
 
@@ -318,3 +540,16 @@ redis给每个master都分配了插槽，如果当前访问的节点发现算出
 
 * select、poll：只会通知进程存在socket已经就绪，但是不知道是哪个socket，需要进程逐个询问
 * epoll：会告知进程哪个socket就绪，而且还会把就绪的socket写入用户空间
+
+> 没有使用多路复用，那么就会直接调用recvfrom，而不会考虑socket是否可读可写，这样就会造成不必要的阻塞时间
+
+**redis网络模型**
+
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231201140252216.png" alt="image-20231201140252216" style="zoom:33%;" />
+
+redis中有三个处理器，分别处理连接请求、命令执行请求、命令结果响应请求
+
+多线程模式
+
+* 虽然redis是单线程的，但是由于网络IO的耗时缘故，在读取请求和响应请求的IO时，redis加入了多线程操作
+* 要注意的是，即使接收命令和解析命令是多线程的，但是执行命令时仍然是单线程串行的
