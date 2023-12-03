@@ -331,6 +331,48 @@ public R doubleWriteLockWrite(Long id) {
 
   <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130144447471.png" alt="image-20231130144447471" style="zoom:33%;" />
 
+```java
+//读操作
+public R doubleWriteMqRead(Long id) {
+    String json = stringRedisTemplate.opsForValue().get(RedisConstant.DEFAULT_ITEM_PREFIX + id);
+    if(StrUtil.isNotBlank(json)){
+        return R.ok(JSONObject.parseObject(json),"Select from redis");
+    }
+
+    Item item = itemMapper.selectById(id);
+    if(item==null){
+        return R.ok(null,"Select from mysql: data not exist");
+    }
+    rabbitTemplate.convertAndSend(MQRedisUpdateConfig.EXCHANGE_NAME,MQRedisUpdateConfig.ROUTING_KEY,JSON.toJSONString(item));
+    return R.ok(item,"Select from mysql");
+}
+
+//写操作
+public R doubleWriteMqWrite(Long id) {
+    Item item=new Item();
+    item.setId(id);
+    item.setName(UUID.randomUUID().toString());
+    itemMapper.updateById(item);
+
+    rabbitTemplate.convertAndSend(MQRedisUpdateConfig.EXCHANGE_NAME,MQRedisUpdateConfig.ROUTING_KEY,JSON.toJSONString(item));
+    return R.ok(item,"Update success");
+}
+
+//消费者更新缓存
+public class RedisUpdateListener {
+    @Autowired
+    StringRedisTemplate stringRedisTemplate;
+
+    @RabbitListener(queues = MQRedisUpdateConfig.QUEUE_NAME)
+    public void handlerUpdate(Message message, Channel channel){
+        String msg=new String(message.getBody());
+        Item item = JSONUtil.toBean(msg , Item.class);
+        stringRedisTemplate.opsForValue().set(RedisConstant.DEFAULT_ITEM_PREFIX+item.getId(),msg,30, TimeUnit.SECONDS);
+        log.debug("Update item: [{}]",msg);
+    }
+}
+```
+
 
 
 #### 数据持久化
