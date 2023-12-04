@@ -82,6 +82,6 @@
 解决方案：先select 覆盖索引的部分，然后通过主键连接找出所有数据，这样就可以使用上索引了。
 
 ```mysql
-select * from tb_item t1 ,(select id,name from tb_item order by name limit 1000000,10) t2 where  t1.id=t2.id;
+select * from tb_item t1 join (select name from tb_item order by name limit 1000000,10) t2 on t1.id=t2.id
 ```
 
