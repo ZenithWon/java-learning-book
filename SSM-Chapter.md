@@ -40,14 +40,20 @@ public class LogAspect {
             res=joinPoint.proceed();
             long end=System.currentTimeMillis();
             log.debug("[{} {}] request successfully, runtime {} ms",method,pathInfo, end-begin);
-        } catch (Throwable throwable) {
-            throwable.printStackTrace();
+            } catch (Throwable throwable) {
             log.error("[{} {}] request failed!",method,pathInfo);
+            if(throwable instanceof MyException){
+                throw new MyException(((MyException) throwable).getMsg());
+            }else {
+                throw new RuntimeException();
+            }
         }
         return res;
     }
 }
 ```
+
+> 注意：AOP中一定要将错误抛出，否则全局异常处理器无法捕获异常。其次，事务的AOP最先执行，因此AOP不抛出异常事务依然生效，但是全局异常管理器不生效
 
 
 
