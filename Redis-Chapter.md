@@ -27,7 +27,7 @@ public R cacheThroughNullSolution(Long id) {
 
 2. 布隆过滤器：在查询redis之前可以先去访问布隆过滤器，如果返回不存在则直接返回，如果返回存在则再执行后面的查询业务。
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130140657932.png" alt="image-20231130140657932" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130140657932.png" alt="image-20231130140657932" style="zoom:50%;" />
 
 ```java
 public R cacheThroughBloomSolution(Long id) {
@@ -60,7 +60,7 @@ public R cacheThroughBloomSolution(Long id) {
 
 当查询某个key的时候，同样会用这$N$个哈希函数计算哈希值，然后查看这个$N$个bit位，只要有一个不为1则返回false，否则返回true
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130140813783.png" alt="image-20231130140813783" style="zoom: 33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130140813783.png" alt="image-20231130140813783" style="zoom: 50%;" />
 
 ```java
 public class BloomFilter {
@@ -122,7 +122,7 @@ public class BloomFilter {
 
    没有争抢的线程则会被阻塞一段时间，醒来后查询缓存，如果缓存中存在数据则返回，不存在则会继续争抢锁。
 
-   <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130141650119.png" alt="image-20231130141650119" style="zoom: 33%;" />
+   <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130141650119.png" alt="image-20231130141650119" style="zoom: 50%;" />
 
    ```java
    public R hitThroughMutexSolution(Long id) {
@@ -171,7 +171,7 @@ public class BloomFilter {
 
    获取锁失败则会直接返回旧数据，而不是阻塞循环等待。
 
-   <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130142038996.png" alt="image-20231130142038996" style="zoom:33%;" />
+   <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130142038996.png" alt="image-20231130142038996" style="zoom:50%;" />
    
    ```java
    public R hitThroughMLogicalTtlSolution(Long id) {
@@ -246,7 +246,7 @@ public class BloomFilter {
 
 **写操作**：采用延迟双删策略
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130143149918.png" alt="image-20231130143149918" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130143149918.png" alt="image-20231130143149918" style="zoom:50%;" />
 
 由于不管是先删除缓存再修改数据库，还是先修改数据库在删除缓存都会导致数据的不一致性，因此这里使用双删的策略。
 
@@ -327,9 +327,9 @@ public R doubleWriteLockWrite(Long id) {
 
   修改数据的时候不直接同时操作缓存和数据库，而是操作完数据库后发布一条消息，缓存服务会持续监听该信道的消息，然后更新自己的缓存。
 
-  <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130144355209.png" alt="image-20231130144355209" style="zoom:33%;" />
+  <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130144355209.png" alt="image-20231130144355209" style="zoom:50%;" />
 
-  <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130144447471.png" alt="image-20231130144447471" style="zoom:33%;" />
+  <img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130144447471.png" alt="image-20231130144447471" style="zoom:50%;" />
 
 ```java
 //读操作
@@ -385,7 +385,7 @@ RDB会将redis的内存数据全部记录到磁盘上，相当于一个快照，
 
 **RDB执行原理**
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130150718867.png" alt="image-20231130150718867" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130150718867.png" alt="image-20231130150718867" style="zoom:50%;" />
 
 **AOF方式**
 
@@ -451,11 +451,11 @@ AOF文件会记录redis每个写操作命令，当需要恢复的时候则会执
 
 使用redisson可以实现对锁的自动续期操作，使用看门狗机制，开启一个新的线程watchDog，不断的给锁续期
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130164235357.png" alt="image-20231130164235357" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130164235357.png" alt="image-20231130164235357" style="zoom:50%;" />
 
 redisson还可以设置锁的重试时间，不会获取失败直接返回，也不会循环无线等待
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130164302414.png" alt="image-20231130164302414" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130164302414.png" alt="image-20231130164302414" style="zoom:50%;" />
 
 **Redisson可重入锁**
 
@@ -470,7 +470,7 @@ redisson还可以设置锁的重试时间，不会获取失败直接返回，也
 
 由于redis的主从是读写分离的，如果一个线程刚设置完锁，但是还没来的及同步给从库，master就崩了，那么新的master中是没有这把锁的。
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130164929225.png" alt="image-20231130164929225" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130164929225.png" alt="image-20231130164929225" style="zoom:50%;" />
 
 可以使用redis的红锁实现，即每次创建锁的时候需要在$\frac{n}{2}+1$个节点上创建该锁，否则无法获取这把锁
 
@@ -492,7 +492,7 @@ slave建立连接后，会发送携带id（初始值为自己的id）和offset�
 
 但是在bgsave的时候也会有新的写请求，因此master还需要同步维护一个类似AOF的文件，称为repl_baklog，master会根据上一次的offset发送repl_baklog文件对应的内容发送给slave，slave收到后更新数据并且更新自己的offset
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130171940263.png" alt="image-20231130171940263" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130171940263.png" alt="image-20231130171940263" style="zoom:50%;" />
 
 **增量同步**
 
@@ -502,7 +502,7 @@ slave携带id和offset请求同步后，master发现id一致，那么就会执�
 
 然后从repl_baklog中offset以后的数据发送给slave，slave收到后更新数据并且更新自己的offset
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130172216554.png" alt="image-20231130172216554" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130172216554.png" alt="image-20231130172216554" style="zoom:50%;" />
 
 
 
@@ -516,7 +516,7 @@ slave携带id和offset请求同步后，master发现id一致，那么就会执�
 2. 如果master故障，sentinel会从slave中选取一个作为新的master，即使原本的master恢复，也只能成为新master的slave
 3. 通知redis客户端主从发生变化，防止客户端违规的向原本的master写数据（可能成为slave或者还在故障中）
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130174229378.png" alt="image-20231130174229378" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130174229378.png" alt="image-20231130174229378" style="zoom:50%;" />
 
 **服务状态监控工作原理**
 
@@ -558,7 +558,7 @@ slave携带id和offset请求同步后，master发现id一致，那么就会执�
 
 redis给每个master都分配了插槽，如果当前访问的节点发现算出来的结果不是自己的槽就会根据值路由到其他redis节点，否则从自己的内存中查出来返回。
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130175653818.png" alt="image-20231130175653818" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231130175653818.png" alt="image-20231130175653818" style="zoom:50%;" />
 
 
 
@@ -576,7 +576,7 @@ redis给每个master都分配了插槽，如果当前访问的节点发现算出
 
 而IO多路复用则是在请求读写之前会先发一个监听请求，阻塞自己监听**多个**socke连接，一旦有socket（一个或多个）可读可写时，就会通知进程，这时候进程再次阻塞自己请求内核读写数据。
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231201113238880.png" alt="image-20231201113238880" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231201113238880.png" alt="image-20231201113238880" style="zoom:50%;" />
 
 常见的监听请请求分两大类：
 
@@ -587,7 +587,7 @@ redis给每个master都分配了插槽，如果当前访问的节点发现算出
 
 **redis网络模型**
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231201140252216.png" alt="image-20231201140252216" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231201140252216.png" alt="image-20231201140252216" style="zoom:50%;" />
 
 redis中有三个处理器，分别处理连接请求、命令执行请求、命令结果响应请求
 

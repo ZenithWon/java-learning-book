@@ -46,7 +46,7 @@
 
 **底层数据结构（B+树）**
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231204165220861.png" alt="image-20231204165220861" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231204165220861.png" alt="image-20231204165220861" style="zoom:50%;" />
 
 * 和B树不同的是，B+树的非叶子节点不存储信息，value存在每个叶子节点里面。也就是说，数据库中的每条记录都对应一个叶子节点
 
@@ -82,7 +82,7 @@
 
 如果查询涉及的索引是二级索引，由于二级索引存储的是主键，因此还会回到聚集索引中根据主键查询整条记录，这就发生了回表查询。
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231204173749766.png" alt="image-20231204173749766" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231204173749766.png" alt="image-20231204173749766" style="zoom:50%;" />
 
 
 
@@ -215,7 +215,7 @@ select * from tb_item t1 join (select name from tb_item order by name limit 1000
 
 和redis一样，同样也是读写分离，然后主库给从库同步
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231205164948737.png" alt="image-20231205164948737" style="zoom: 33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231205164948737.png" alt="image-20231205164948737" style="zoom: 50%;" />
 
 主库会使维护binlog日志文件，该文件记录了所有的DDL和DML语句，但不包括select等查询语句
 
