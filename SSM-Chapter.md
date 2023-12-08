@@ -14,6 +14,41 @@ AOP成为面向切面编程，可以用来抽取多个方法、对象的通用�
 
 Spring中的事务就是通过@Transactional注解实现的，其本质是一个环绕类型的AOP，在执行前开启事务，执行后提交事务，如果catch到异常就会回滚事务。
 
+```java
+@Component
+@Aspect
+@Slf4j
+public class LogAspect {
+    @Pointcut("execution(* com.zenith.controller.*.* (..))")
+    public void pt(){
+    }
+
+    @Around("pt()")
+    public Object handlerController(ProceedingJoinPoint joinPoint){
+        Object res=null;
+        RequestAttributes ra = RequestContextHolder.getRequestAttributes();
+        ServletRequestAttributes sra = (ServletRequestAttributes) ra;
+        HttpServletRequest request = sra.getRequest();
+
+        String serverName = request.getServerName();
+        String pathInfo = request.getServletPath();
+        String method = request.getMethod();
+        log.debug("From server: {}, request =>[{} {}]",serverName,method,pathInfo);
+
+        try {
+            long begin = System.currentTimeMillis();
+            res=joinPoint.proceed();
+            long end=System.currentTimeMillis();
+            log.debug("[{} {}] request successfully, runtime {} ms",method,pathInfo, end-begin);
+        } catch (Throwable throwable) {
+            throwable.printStackTrace();
+            log.error("[{} {}] request failed!",method,pathInfo);
+        }
+        return res;
+    }
+}
+```
+
 
 
 #### 事务失效
@@ -66,7 +101,7 @@ Spring中的事务就是通过@Transactional注解实现的，其本质是一个
 
 具体产生过程如下图
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/202312081009250.png" alt="image-20231208092612729" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/202312081009250.png" alt="image-20231208092612729" style="zoom:50%;" />
 
 **三级缓存**
 
@@ -80,11 +115,11 @@ Spring是通过三级缓存解决循环依赖的：
 
 当需要依赖注入的时候，先去单例池中找，再去二级缓存中找这样只要这个bean执行了构造函数，就不会出现在依赖注入时再次构造该对象的情况，打破了环。
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231208094441975.png" alt="image-20231208094441975" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231208094441975.png" alt="image-20231208094441975" style="zoom:50%;" />
 
 若需要注入的是一个代理对象，那么仅通过二级缓存还是无法解决，因为二级缓存注入的永远是对象本身，因此需要借助三级缓存的对象工厂生成代理对象。
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231208094721969.png" alt="image-20231208094721969" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231208094721969.png" alt="image-20231208094721969" style="zoom:50%;" />
 
 > 注意上述的前提是执行了构造函数才可以打破循环依赖，如果通过构造函数注入，还是无法解决，那么可以在构造函数的bean对象前面加上一个`@Lazy`的注解，就可以实现懒加载，需要的时候才会注入，保证该对象的构造函数已经执行。
 
@@ -94,13 +129,13 @@ Spring是通过三级缓存解决循环依赖的：
 
 **视图阶段**
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231207165810673.png" alt="image-20231207165810673" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231207165810673.png" alt="image-20231207165810673" style="zoom:50%;" />
 
 **前后端分离阶段**
 
 如果加上了`@reponsebody`注解
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231207165835812.png" alt="image-20231207165835812" style="zoom: 33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/image-20231207165835812.png" alt="image-20231207165835812" style="zoom: 50%;" />
 
 
 
@@ -126,7 +161,7 @@ springboot的自动配置主要就是依赖于启动类上的`@SpringBootApplica
 
 #### Mybatis执行流程
 
-<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/202312081050829.png" alt="202312081050829" style="zoom: 33%;" />
+<img src="https://raw.githubusercontent.com/ZenithWon/figure/master/202312081050829.png" alt="202312081050829" style="zoom: 50%;" />
 
 * 加载配置文件，里面包含数据库的配置、映射文件配置等
 
